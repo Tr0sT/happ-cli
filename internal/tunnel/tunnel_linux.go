@@ -159,7 +159,7 @@ func cleanupRoutes() error {
 			kind string
 			dst  *[]map[string]any
 		}{{"rule", &s.rules}, {"route", &s.routes}} {
-			args := []string{"-j", family, entry.kind, "show"}
+			args := []string{"-N", "-j", family, entry.kind, "show"}
 			if entry.kind == "route" {
 				args = append(args, "table", "all")
 			}

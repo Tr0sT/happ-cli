@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, utils, ... }:
 let
   cfg = config.services.happ-cli;
   happ = "${cfg.package}/bin/happ --home /var/lib/happ-cli";
@@ -43,7 +43,7 @@ in {
         StateDirectory = "happ-cli";
         StateDirectoryMode = "0700";
         UMask = "0077";
-        ExecStart = "${happ} connect --mode ${cfg.mode} --health-check --check-url ${lib.escapeShellArg cfg.checkURL} --failover=${lib.boolToString cfg.failover}";
+        ExecStart = "${happ} connect --mode ${cfg.mode} --health-check --check-url ${utils.escapeSystemdExecArg cfg.checkURL} --failover=${lib.boolToString cfg.failover}";
         Restart = "on-failure";
         RestartSec = "15s";
         TimeoutStopSec = "30s";

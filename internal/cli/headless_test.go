@@ -100,7 +100,17 @@ func TestWorkingSelectionDoesNotDestroyPreferenceOnFailure(t *testing.T) {
 }
 
 func TestSelectWorkingSkipsDeadProxyAndPersistsLiveOne(t *testing.T) {
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	previous := homeDir
+	homeDir = t.TempDir()
+	defer func() { homeDir = previous }()
+	hit := make(chan struct{}, 1)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(204)
+		select {
+		case hit <- struct{}{}:
+		default:
+		}
+	}))
 	defer target.Close()
 	free := func() int {
 		l, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -134,5 +144,41 @@ func TestSelectWorkingSkipsDeadProxyAndPersistsLiveOne(t *testing.T) {
 	live, _ := link.Parse(links[1])
 	if saved.Selected != live.Key() {
 		t.Fatal("did not retain the working profile")
+	}
+	<-hit
+	dead, _ := link.Parse(links[0])
+	for _, removed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("failover_removed=%v", removed), func(t *testing.T) {
+			if err := st.Select("vpn", dead.Key()); err != nil {
+				t.Fatal(err)
+			}
+			if removed {
+				if err := st.Upsert(store.SubEntry{Name: "vpn", Links: links[1:]}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			cmd := newConnectCmd(DefaultDeps(st))
+			cmd.SetArgs([]string{"--failover", "--check-interval", "1", "--check-url", target.URL, "--socks", fmt.Sprint(free()), "--http", "0"})
+			done := make(chan error, 1)
+			go func() { done <- cmd.ExecuteContext(ctx) }()
+			select {
+			case <-hit:
+				cancel()
+				if err := <-done; err != nil {
+					t.Fatal(err)
+				}
+			case err := <-done:
+				t.Fatalf("connection exited before the working profile was reached: %v", err)
+			case <-ctx.Done():
+				<-done
+				t.Fatal("failover did not reach the working profile")
+			}
+			current, _ := st.Find("vpn")
+			if current.Selected != dead.Key() {
+				t.Fatal("failover changed the preferred profile")
+			}
+		})
 	}
 }
