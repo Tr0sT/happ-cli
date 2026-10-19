@@ -21,6 +21,7 @@ type Connect struct {
 	NoRouting     bool   `yaml:"no-routing"`
 	SkipFirewall  bool   `yaml:"skip-firewall"`
 	SystemProxy   bool   `yaml:"system-proxy"`
+	Failover      bool   `yaml:"failover"`
 }
 
 // File is the root config structure.
@@ -52,11 +53,11 @@ func Load(dir string) (*File, error) {
 		}
 		return nil, fmt.Errorf("config: read %s: %w", path, err)
 	}
-	var c File
+	c := Default()
 	if err := yaml.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("config: parse %s: %w", path, err)
 	}
-	return &c, nil
+	return c, nil
 }
 
 // Save writes the config to dir/config.yaml.

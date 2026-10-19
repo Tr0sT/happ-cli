@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/aimuzov/happ-cli/internal/store"
+	"github.com/Tr0sT/happ-cli/internal/store"
 )
 
 var homeDir string
@@ -15,15 +15,7 @@ var homeDir string
 // Execute runs the root command with the given context (cancelled on SIGINT).
 // version is reported by `happ --version` / `happ version`.
 func Execute(ctx context.Context, version string) error {
-	dir, err := storeDir()
-	if err != nil {
-		return err
-	}
-	st, err := store.Open(dir)
-	if err != nil {
-		return err
-	}
-	return newRootCmd(version, DefaultDeps(st)).ExecuteContext(ctx)
+	return newRootCmd(version, DefaultDeps(nil)).ExecuteContext(ctx)
 }
 
 func newRootCmd(version string, deps *Deps) *cobra.Command {
@@ -36,7 +28,24 @@ func newRootCmd(version string, deps *Deps) *cobra.Command {
 			"and connects through an embedded xray-core, either as a local proxy or a full TUN tunnel.",
 		Version:       version,
 		SilenceUsage:  true,
-		SilenceErrors: false,
+		SilenceErrors: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			for current := cmd; current != nil; current = current.Parent() {
+				switch current.Name() {
+				case "service", "check", "cleanup-tun", "config-init", "config-show", "system-proxy":
+					return nil
+				}
+			}
+			if deps.Store != nil {
+				return nil
+			}
+			st, err := openStore()
+			if err != nil {
+				return err
+			}
+			deps.Store = st
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if interactive {
 				return runInteractive(cmd.Context(), deps)
@@ -55,6 +64,9 @@ func newRootCmd(version string, deps *Deps) *cobra.Command {
 		newCleanupTunCmd(),
 		newConfigInitCmd(),
 		newConfigShowCmd(),
+		newSelectCmd(deps),
+		newCheckCmd(),
+		newServiceCmd(),
 	)
 	return root
 }

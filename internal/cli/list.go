@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/aimuzov/happ-cli/internal/xray"
+	"github.com/Tr0sT/happ-cli/internal/xray"
 )
 
 func newListCmd(deps *Deps) *cobra.Command {
@@ -28,13 +28,21 @@ func newListCmd(deps *Deps) *cobra.Command {
 				return nil
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-			fmt.Fprintf(tw, "#\tPROTOCOL\tADDRESS\tTAG\n")
+			fmt.Fprintf(tw, "#\tSELECTED\tPROTOCOL\tADDRESS\tTAG\n")
 			for i, s := range servers {
 				note := s.Protocol
 				if !xray.Supported(s.Protocol) {
 					note += " (unsupported)"
 				}
-				fmt.Fprintf(tw, "%d\t%s\t%s:%d\t%s\n", i+1, note, s.Address, s.Port, s.Tag)
+				selected := ""
+				if s.Key() == sub.Selected {
+					selected = "*"
+				}
+				address := fmt.Sprintf("%s:%d", s.Address, s.Port)
+				if s.RawConfig != nil {
+					address = "profile"
+				}
+				fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\n", i+1, selected, note, address, s.Tag)
 			}
 			return tw.Flush()
 		},
@@ -61,7 +69,7 @@ func newConfigCmd(deps *Deps) *cobra.Command {
 			if len(args) > 0 {
 				selector = args[0]
 			}
-			srv, _, err := selectServer(sub.Servers(), selector)
+			srv, _, err := selectedServer(sub, selector)
 			if err != nil {
 				return err
 			}

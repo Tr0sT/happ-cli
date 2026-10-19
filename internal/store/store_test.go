@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/Tr0sT/happ-cli/internal/link"
 	"testing"
 )
 
@@ -82,5 +83,33 @@ func TestRemove(t *testing.T) {
 	// Active should fall back to a remaining subscription.
 	if st.Active() != "b" {
 		t.Errorf("Active = %q, want b after removing active", st.Active())
+	}
+}
+
+func TestStaleUpdaterCannotEraseSelectionOrNewSubscriptions(t *testing.T) {
+	dir := t.TempDir()
+	first, _ := Open(dir)
+	raw := "trojan://old@host:443#Server"
+	if err := first.Upsert(SubEntry{Name: "vpn", Links: []string{raw}}); err != nil {
+		t.Fatal(err)
+	}
+	updater, _ := Open(dir)
+	selected, _ := link.Parse(raw)
+	if err := first.Select("vpn", selected.Key()); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Upsert(SubEntry{Name: "other"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := updater.Upsert(SubEntry{Name: "vpn", Links: []string{"trojan://new@host:443#Server"}}); err != nil {
+		t.Fatal(err)
+	}
+	reopened, _ := Open(dir)
+	sub, _ := reopened.Find("vpn")
+	if sub.Selected != selected.Key() {
+		t.Fatal("updater erased concurrent selection")
+	}
+	if _, ok := reopened.Find("other"); !ok {
+		t.Fatal("updater erased concurrent add")
 	}
 }

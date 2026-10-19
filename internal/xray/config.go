@@ -7,21 +7,23 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/aimuzov/happ-cli/internal/link"
+	"github.com/Tr0sT/happ-cli/internal/link"
 )
 
 // Options controls the inbounds and logging of the generated config.
 type Options struct {
-	LogLevel  string // xray loglevel; default "warning"
-	Listen    string // inbound listen address; default 127.0.0.1
-	SocksPort int    // SOCKS inbound port; 0 disables
-	HTTPPort  int    // HTTP inbound port; 0 disables
-	TUNDirect bool   // use xray's built-in TUN inbound (no SOCKS/tun2socks)
-	DNSProxy  bool   // add xray DNS resolver to prevent leaks; default true
+	LogLevel   string // xray loglevel; default "warning"
+	Listen     string // inbound listen address; default 127.0.0.1
+	SocksPort  int    // SOCKS inbound port; 0 disables
+	HTTPPort   int    // HTTP inbound port; 0 disables
+	TUNDirect  bool   // use xray's built-in TUN inbound (no SOCKS/tun2socks)
+	DNSProxy   bool   // add xray DNS resolver to prevent leaks; default true
+	SocketMark int    // Linux: bypass our policy routes for Xray uplink sockets
 }
 
 // Config is the root xray configuration object.
 type Config struct {
+	raw       map[string]json.RawMessage
 	Log       *LogConfig `json:"log,omitempty"`
 	DNS       *DNSConfig `json:"dns,omitempty"`
 	Inbounds  []Inbound  `json:"inbounds"`
@@ -30,6 +32,14 @@ type Config struct {
 
 // JSON marshals the config to the bytes accepted by xray-core's JSON loader.
 func (c *Config) JSON() ([]byte, error) { return json.MarshalIndent(c, "", "  ") }
+
+func (c *Config) MarshalJSON() ([]byte, error) {
+	if c.raw != nil {
+		return json.Marshal(c.raw)
+	}
+	type plain Config
+	return json.Marshal((*plain)(c))
+}
 
 type LogConfig struct {
 	Loglevel string `json:"loglevel,omitempty"`
@@ -63,6 +73,7 @@ type Outbound struct {
 }
 
 type StreamSettings struct {
+	Sockopt         map[string]any   `json:"sockopt,omitempty"`
 	Network         string           `json:"network,omitempty"`
 	Security        string           `json:"security,omitempty"`
 	TLSSettings     *TLSSettings     `json:"tlsSettings,omitempty"`
@@ -112,6 +123,9 @@ type TCPHeader struct {
 
 // BuildConfig turns a server and inbound options into an xray Config.
 func BuildConfig(s *link.Server, opts Options) (*Config, error) {
+	if s.RawConfig != nil {
+		return buildRawConfig(s, opts)
+	}
 	out, err := buildOutbound(s)
 	if err != nil {
 		return nil, err
@@ -128,8 +142,8 @@ func BuildConfig(s *link.Server, opts Options) (*Config, error) {
 	}
 
 	cfg := &Config{
-		Log:       &LogConfig{Loglevel: loglevel},
-		Inbounds:  inbounds,
+		Log:      &LogConfig{Loglevel: loglevel},
+		Inbounds: inbounds,
 		Outbounds: []Outbound{
 			*out,
 			{Tag: "direct", Protocol: "freedom"},
@@ -138,6 +152,14 @@ func BuildConfig(s *link.Server, opts Options) (*Config, error) {
 	}
 	if opts.DNSProxy {
 		cfg.DNS = &DNSConfig{Servers: []string{"1.1.1.1", "8.8.8.8"}}
+	}
+	if opts.SocketMark != 0 {
+		for i := range cfg.Outbounds {
+			if cfg.Outbounds[i].StreamSettings == nil {
+				cfg.Outbounds[i].StreamSettings = &StreamSettings{}
+			}
+			cfg.Outbounds[i].StreamSettings.Sockopt = map[string]any{"mark": opts.SocketMark}
+		}
 	}
 	return cfg, nil
 }
@@ -149,19 +171,19 @@ func buildInbounds(opts Options) ([]Inbound, error) {
 	}
 	sniff := &Sniffing{Enabled: true, DestOverride: []string{"http", "tls", "quic"}}
 
+	var inbounds []Inbound
 	if opts.TUNDirect {
-		return []Inbound{{
+		inbounds = append(inbounds, Inbound{
 			Tag:      "tun-in",
 			Protocol: "tun",
 			Settings: map[string]any{
-				"mtu":   1500,
-				"stack": "gvisor",
+				"mtu":  1500,
+				"name": "thapp",
 			},
 			Sniffing: sniff,
-		}}, nil
+		})
 	}
 
-	var inbounds []Inbound
 	if opts.SocksPort > 0 {
 		inbounds = append(inbounds, Inbound{
 			Tag:      "socks-in",

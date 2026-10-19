@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/aimuzov/happ-cli/internal/link"
+	"github.com/Tr0sT/happ-cli/internal/link"
 )
 
 // Subscription is the result of fetching and parsing a subscription URL,
@@ -31,13 +32,17 @@ const DefaultUserAgent = "INCY/2.4.1/macos CFNetwork/3860.600.21 Darwin/25.5.0"
 // Fetch downloads a subscription URL and parses its body and metadata headers.
 // Extra headers (e.g. device identity) are applied after User-Agent.
 func Fetch(ctx context.Context, subURL, userAgent string, headers http.Header) (*Subscription, error) {
+	u, err := url.Parse(subURL)
+	if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") {
+		return nil, fmt.Errorf("subscription URL must be HTTP(S)")
+	}
 	if userAgent == "" {
 		userAgent = DefaultUserAgent
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, subURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("subscription request: %w", err)
+		return nil, fmt.Errorf("invalid subscription URL")
 	}
 	req.Header.Set("User-Agent", userAgent)
 	for k, vs := range headers {
@@ -49,6 +54,9 @@ func Fetch(ctx context.Context, subURL, userAgent string, headers http.Header) (
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		if e, ok := err.(*url.Error); ok {
+			err = e.Err
+		}
 		return nil, fmt.Errorf("fetch subscription: %w", err)
 	}
 	defer resp.Body.Close()
@@ -57,9 +65,12 @@ func Fetch(ctx context.Context, subURL, userAgent string, headers http.Header) (
 		return nil, fmt.Errorf("subscription returned HTTP %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, (16<<20)+1))
 	if err != nil {
 		return nil, fmt.Errorf("read subscription body: %w", err)
+	}
+	if len(body) > 16<<20 {
+		return nil, fmt.Errorf("subscription exceeds 16 MiB")
 	}
 
 	servers, err := ParseBody(body)

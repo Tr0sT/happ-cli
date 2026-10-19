@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/aimuzov/happ-cli/internal/cli"
+	"github.com/Tr0sT/happ-cli/internal/cli"
 )
 
 // version is overridden at build time via -ldflags "-X main.version=...".

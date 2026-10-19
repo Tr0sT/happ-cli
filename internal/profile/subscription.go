@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aimuzov/happ-cli/internal/link"
+	"github.com/Tr0sT/happ-cli/internal/link"
 )
 
 // UserInfo is the parsed subscription-userinfo header: traffic counters and the
@@ -42,6 +42,9 @@ func ParseBody(body []byte) ([]*link.Server, error) {
 	// A base64-encoded list has no scheme markers; decode it first.
 	if !strings.Contains(text, "://") {
 		if decoded, err := decodeBase64(text); err == nil {
+			if servers, err := parseJSONBody(decoded); err != nil || servers != nil {
+				return servers, err
+			}
 			text = string(decoded)
 		}
 	}

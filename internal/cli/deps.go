@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/aimuzov/happ-cli/internal/device"
-	"github.com/aimuzov/happ-cli/internal/profile"
-	"github.com/aimuzov/happ-cli/internal/store"
+	"github.com/Tr0sT/happ-cli/internal/device"
+	"github.com/Tr0sT/happ-cli/internal/profile"
+	"github.com/Tr0sT/happ-cli/internal/store"
 )
 
 // Store provides subscription storage. Implemented by *store.Store.
@@ -17,6 +17,7 @@ type Store interface {
 	Remove(name string) error
 	Active() string
 	SetActive(name string) error
+	Select(name, key string) error
 }
 
 // Fetcher downloads and parses subscription URLs.
@@ -45,34 +46,19 @@ func (realDevice) Load(dir string) (*device.ID, error) {
 
 // Deps holds the injectable dependencies for CLI commands.
 type Deps struct {
-	Store    Store
-	Fetch    Fetcher
-	Device   DeviceProvider
-	LastUsed *store.LastUsed
+	Store  Store
+	Fetch  Fetcher
+	Device DeviceProvider
 }
 
 // DefaultDeps returns real implementations using the given store.
 func DefaultDeps(st *store.Store) *Deps {
-	return &Deps{
-		Store:  st,
+	deps := &Deps{
 		Fetch:  realFetcher{},
 		Device: realDevice{},
 	}
-}
-
-// loadLastUsed ensures LastUsed is loaded, opening it lazily.
-func loadLastUsed(deps *Deps) error {
-	if deps.LastUsed != nil {
-		return nil
+	if st != nil {
+		deps.Store = st
 	}
-	dir, err := storeDir()
-	if err != nil {
-		return err
-	}
-	lu, err := store.OpenLastUsed(dir)
-	if err != nil {
-		return err
-	}
-	deps.LastUsed = lu
-	return nil
+	return deps
 }

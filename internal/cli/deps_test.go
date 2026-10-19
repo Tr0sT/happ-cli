@@ -8,9 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/aimuzov/happ-cli/internal/device"
-	"github.com/aimuzov/happ-cli/internal/profile"
-	"github.com/aimuzov/happ-cli/internal/store"
+	"github.com/Tr0sT/happ-cli/internal/device"
+	"github.com/Tr0sT/happ-cli/internal/link"
+	"github.com/Tr0sT/happ-cli/internal/profile"
+	"github.com/Tr0sT/happ-cli/internal/store"
 )
 
 // mockStore implements Store for testing.
@@ -69,6 +70,16 @@ func (m *mockStore) SetActive(name string) error {
 	return fmt.Errorf("subscription %q not found", name)
 }
 
+func (m *mockStore) Select(name, key string) error {
+	for i := range m.subs {
+		if m.subs[i].Name == name {
+			m.subs[i].Selected = key
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
+}
+
 // mockFetcher implements Fetcher for testing.
 type mockFetcher struct {
 	fn func(ctx context.Context, url, ua string, headers http.Header) (*profile.Subscription, error)
@@ -106,6 +117,7 @@ func TestSubListWithMock(t *testing.T) {
 	deps.Store.(*mockStore).active = "vpn1"
 
 	cmd := subListCmd(deps)
+	cmd.SetContext(context.Background())
 	err := cmd.RunE(cmd, nil)
 	if err != nil {
 		t.Fatalf("sub list failed: %v", err)
@@ -122,7 +134,8 @@ func TestSubAddWithMock(t *testing.T) {
 			t.Errorf("expected x-client=INCY, got %q", h.Get("x-client"))
 		}
 		return &profile.Subscription{
-			Title: "Mock VPN",
+			Title:   "Mock VPN",
+			Servers: []*link.Server{testSSServer()},
 		}, nil
 	}}
 	deps.Fetch = fetcher
@@ -200,10 +213,11 @@ func TestSubUpdateWithMock(t *testing.T) {
 		if ua != "Test/1.0" {
 			t.Errorf("ua = %q", ua)
 		}
-		return &profile.Subscription{Title: "Updated VPN"}, nil
+		return &profile.Subscription{Title: "Updated VPN", Servers: []*link.Server{testSSServer()}}, nil
 	}}
 
 	cmd := subUpdateCmd(deps)
+	cmd.SetContext(context.Background())
 	err := cmd.RunE(cmd, nil)
 	if err != nil {
 		t.Fatalf("sub update failed: %v", err)
@@ -225,6 +239,7 @@ func TestSubUpdateNonExistent(t *testing.T) {
 	deps := withDeps()
 
 	cmd := subUpdateCmd(deps)
+	cmd.SetContext(context.Background())
 	err := cmd.RunE(cmd, nil)
 	if err == nil {
 		t.Fatal("expected error for no subscriptions, got nil")
@@ -275,6 +290,7 @@ func TestListServersWithMock(t *testing.T) {
 	deps.Store.(*mockStore).active = "vpn"
 
 	cmd := newListCmd(deps)
+	cmd.SetContext(context.Background())
 	err := cmd.RunE(cmd, nil)
 	if err != nil {
 		t.Fatalf("list failed: %v", err)
@@ -289,6 +305,7 @@ func TestListServersEmpty(t *testing.T) {
 	deps.Store.(*mockStore).active = "vpn"
 
 	cmd := newListCmd(deps)
+	cmd.SetContext(context.Background())
 	err := cmd.RunE(cmd, nil)
 	if err != nil {
 		t.Fatalf("list empty failed: %v", err)
@@ -387,9 +404,10 @@ func TestSubUpdatePreservesLinksWhenEmpty(t *testing.T) {
 	}}
 
 	cmd := subUpdateCmd(deps)
+	cmd.SetContext(context.Background())
 	err := cmd.RunE(cmd, nil)
-	if err != nil {
-		t.Fatalf("sub update failed: %v", err)
+	if err == nil {
+		t.Fatal("empty response must report failure")
 	}
 
 	sub, ok := deps.Store.Find("vpn")
@@ -402,7 +420,15 @@ func TestSubUpdatePreservesLinksWhenEmpty(t *testing.T) {
 	if sub.Links[0] != "vless://old@host:443#Old" {
 		t.Errorf("link = %q, want old link preserved", sub.Links[0])
 	}
-	if sub.Title != "New Title" {
-		t.Errorf("title = %q, want 'New Title' (metadata updated)", sub.Title)
+	if sub.Title != "" {
+		t.Fatal("failed update modified metadata")
 	}
+}
+
+func testSSServer() *link.Server {
+	s, err := link.Parse("ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ=@127.0.0.1:8388#Test")
+	if err != nil {
+		panic(err)
+	}
+	return s
 }

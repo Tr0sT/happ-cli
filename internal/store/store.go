@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/aimuzov/happ-cli/internal/link"
-	"github.com/aimuzov/happ-cli/internal/profile"
+	"github.com/Tr0sT/happ-cli/internal/link"
+	"github.com/Tr0sT/happ-cli/internal/profile"
 )
 
 // SubEntry is one stored subscription and its cached links.
@@ -22,6 +22,7 @@ type SubEntry struct {
 	UserInfo       *profile.UserInfo `json:"userInfo,omitempty"`
 	UpdatedAt      string            `json:"updatedAt,omitempty"`
 	Links          []string          `json:"links,omitempty"`
+	Selected       string            `json:"selected,omitempty"`
 }
 
 // Servers re-parses the cached share links into Server values, skipping any
@@ -105,42 +106,47 @@ func (s *Store) Find(name string) (SubEntry, bool) {
 // Upsert inserts or replaces a subscription by name and persists the store. The
 // first subscription added becomes the active one.
 func (s *Store) Upsert(entry SubEntry) error {
-	for i, e := range s.state.Subscriptions {
-		if e.Name == entry.Name {
-			s.state.Subscriptions[i] = entry
-			return s.save()
+	return s.mutate(func() error {
+		for i, e := range s.state.Subscriptions {
+			if e.Name == entry.Name {
+				entry.Selected = e.Selected
+				s.state.Subscriptions[i] = entry
+				return nil
+			}
 		}
-	}
-	s.state.Subscriptions = append(s.state.Subscriptions, entry)
-	if s.state.Active == "" {
-		s.state.Active = entry.Name
-	}
-	return s.save()
+		s.state.Subscriptions = append(s.state.Subscriptions, entry)
+		if s.state.Active == "" {
+			s.state.Active = entry.Name
+		}
+		return nil
+	})
 }
 
 // Remove deletes a subscription by name. If it was active, the active pointer
 // falls back to the first remaining subscription.
 func (s *Store) Remove(name string) error {
-	out := s.state.Subscriptions[:0]
-	removed := false
-	for _, e := range s.state.Subscriptions {
-		if e.Name == name {
-			removed = true
-			continue
+	return s.mutate(func() error {
+		out := s.state.Subscriptions[:0]
+		removed := false
+		for _, e := range s.state.Subscriptions {
+			if e.Name == name {
+				removed = true
+				continue
+			}
+			out = append(out, e)
 		}
-		out = append(out, e)
-	}
-	if !removed {
-		return fmt.Errorf("store: subscription %q not found", name)
-	}
-	s.state.Subscriptions = out
-	if s.state.Active == name {
-		s.state.Active = ""
-		if len(s.state.Subscriptions) > 0 {
-			s.state.Active = s.state.Subscriptions[0].Name
+		if !removed {
+			return fmt.Errorf("store: subscription %q not found", name)
 		}
-	}
-	return s.save()
+		s.state.Subscriptions = out
+		if s.state.Active == name {
+			s.state.Active = ""
+			if len(s.state.Subscriptions) > 0 {
+				s.state.Active = s.state.Subscriptions[0].Name
+			}
+		}
+		return nil
+	})
 }
 
 // Active returns the name of the active subscription, or "".
@@ -148,9 +154,29 @@ func (s *Store) Active() string { return s.state.Active }
 
 // SetActive marks a subscription as active.
 func (s *Store) SetActive(name string) error {
-	if _, ok := s.Find(name); !ok {
-		return fmt.Errorf("store: subscription %q not found", name)
-	}
-	s.state.Active = name
-	return s.save()
+	return s.mutate(func() error {
+		if _, ok := s.Find(name); !ok {
+			return fmt.Errorf("store: subscription %q not found", name)
+		}
+		s.state.Active = name
+		return nil
+	})
+}
+
+func (s *Store) Select(name, key string) error {
+	return s.mutate(func() error {
+		for i, sub := range s.state.Subscriptions {
+			if sub.Name != name {
+				continue
+			}
+			for _, srv := range sub.Servers() {
+				if srv.Key() == key {
+					s.state.Subscriptions[i].Selected = key
+					return nil
+				}
+			}
+			return fmt.Errorf("selected server is no longer in subscription %q", name)
+		}
+		return fmt.Errorf("subscription %q not found", name)
+	})
 }

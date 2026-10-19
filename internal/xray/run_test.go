@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aimuzov/happ-cli/internal/link"
+	"github.com/Tr0sT/happ-cli/internal/link"
 )
 
 func freePort(t *testing.T) int {

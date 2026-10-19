@@ -1,4 +1,4 @@
-module github.com/aimuzov/happ-cli
+module github.com/Tr0sT/happ-cli
 
 go 1.26.4
 

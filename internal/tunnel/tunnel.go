@@ -5,8 +5,11 @@
 // pinned to the physical gateway to avoid a routing loop.
 package tunnel
 
+const SocketMark = 0x48415050
+
 // Options configures a TUN tunnel.
 type Options struct {
+	Native bool // use the TUN interface already created by embedded Xray (Linux)
 	// SocksAddr is the host:port of the local SOCKS5 proxy to forward to.
 	SocksAddr string
 	// ServerIPs are the resolved IP addresses of the proxy server; routes to

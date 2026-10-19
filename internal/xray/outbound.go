@@ -3,14 +3,14 @@ package xray
 import (
 	"fmt"
 
-	"github.com/aimuzov/happ-cli/internal/link"
+	"github.com/Tr0sT/happ-cli/internal/link"
 )
 
 // Supported reports whether xray-core can dial the given protocol as an
 // outbound. Hysteria2/TUIC/WireGuard are not supported here.
 func Supported(protocol string) bool {
 	switch protocol {
-	case "vless", "vmess", "trojan", "shadowsocks":
+	case "vless", "vmess", "trojan", "shadowsocks", "xray":
 		return true
 	default:
 		return false

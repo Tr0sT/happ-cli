@@ -1,14 +1,36 @@
+//go:build linux
+
 package firewall
 
-import "testing"
+import (
+	"fmt"
+	"reflect"
+	"strings"
+	"testing"
+)
 
-func TestRulesNoOp(t *testing.T) {
-	// On non-Linux, Rules returns a no-op cleanup.
-	// On Linux, it tries iptables (best-effort, won't fail test without root).
-	cleanup := Rules("test0")
-	if cleanup == nil {
-		t.Error("Rules returned nil cleanup")
+func TestPartialFailureRemovesOnlyOwnInstalledRule(t *testing.T) {
+	saved := execute
+	defer func() { execute = saved }()
+	var deleted []string
+	execute = func(args ...string) error {
+		line := strings.Join(args, " ")
+		if args[0] == "-C" {
+			return fmt.Errorf("not found")
+		}
+		if args[0] == "-I" && strings.Contains(line, "-o thapp") {
+			return fmt.Errorf("injected failure")
+		}
+		if args[0] == "-D" {
+			deleted = append(deleted, line)
+		}
+		return nil
 	}
-	// Must not panic.
-	cleanup()
+	if _, err := Rules("thapp"); err == nil {
+		t.Fatal("expected failure")
+	}
+	want := []string{"-D FORWARD -i thapp -m comment --comment happ-cli -j ACCEPT"}
+	if !reflect.DeepEqual(deleted, want) {
+		t.Fatalf("deleted %v", deleted)
+	}
 }

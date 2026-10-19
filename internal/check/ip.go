@@ -1,94 +1,80 @@
-// Package check provides connectivity verification helpers.
 package check
 
 import (
 	"context"
 	"fmt"
+	"golang.org/x/net/proxy"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
-
-	"golang.org/x/net/proxy"
 )
 
-// ExternalIP connects through a local SOCKS5 proxy to Cloudflare's trace
-// endpoint and returns the visible external IP address.
-func ExternalIP(socksAddr string, timeout time.Duration) (string, error) {
-	return fetchViaSOCKS(socksAddr, "https://cloudflare.com/cdn-cgi/trace", timeout)
+func ValidateURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("check URL must be an absolute HTTP(S) URL")
+	}
+	return nil
 }
 
-// FetchURL fetches a URL through the SOCKS5 proxy and returns the response
-// body. Use for custom health-check endpoints.
-func FetchURL(socksAddr, urlStr string, timeout time.Duration) (string, error) {
-	return fetchViaSOCKS(socksAddr, urlStr, timeout)
-}
-
-// fetchViaSOCKS fetches a URL through a SOCKS5 proxy and returns the response body.
-func fetchViaSOCKS(socksAddr, urlStr string, timeout time.Duration) (string, error) {
-	dialer, err := proxy.SOCKS5("tcp", socksAddr, nil, proxy.Direct)
-	if err != nil {
-		return "", fmt.Errorf("socks5 dialer: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return dialer.Dial(network, addr)
-		},
-	}
-	client := &http.Client{Transport: transport, Timeout: timeout}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
+// Fetch never falls back to a direct connection when SOCKS is unavailable.
+func Fetch(ctx context.Context, socksAddr, target string, timeout time.Duration) (string, error) {
+	dialer, err := proxy.SOCKS5("tcp", socksAddr, nil, &net.Dialer{Timeout: timeout})
 	if err != nil {
 		return "", err
 	}
+	return fetch(ctx, target, timeout, dialer.(proxy.ContextDialer).DialContext)
+}
 
-	resp, err := client.Do(req)
+func fetch(ctx context.Context, target string, timeout time.Duration, dial func(context.Context, string, string) (net.Conn, error)) (string, error) {
+	if err := ValidateURL(target); err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	transport := &http.Transport{DialContext: dial}
+	defer transport.CloseIdleConnections()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return "", fmt.Errorf("request: %w", err)
+		return "", err
+	}
+	resp, err := (&http.Client{Transport: transport, Timeout: timeout}).Do(req)
+	if err != nil {
+		if e, ok := err.(*url.Error); ok {
+			err = e.Err
+		}
+		return "", fmt.Errorf("HTTP probe: %w", err)
 	}
 	defer resp.Body.Close()
-
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if err != nil {
-		return "", fmt.Errorf("read: %w", err)
+		return "", err
 	}
-
-	// Try Cloudflare trace format for IP extraction.
-	if strings.Contains(string(body), "ip=") {
-		for _, line := range strings.Split(string(body), "\n") {
-			k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
-			if ok && k == "ip" {
-				return v, nil
-			}
+	for _, line := range strings.Split(string(body), "\n") {
+		if value, ok := strings.CutPrefix(line, "ip="); ok {
+			return strings.TrimSpace(value), nil
 		}
 	}
 	return strings.TrimSpace(string(body)), nil
 }
 
-// PrintIP fetches and prints the external IP using the local SOCKS5 proxy.
-func PrintIP(socksPort int) {
-	addr := fmt.Sprintf("127.0.0.1:%d", socksPort)
-	ip, err := ExternalIP(addr, 5*time.Second)
+func ExternalIP(addr string, timeout time.Duration) (string, error) {
+	return Fetch(context.Background(), addr, "https://cloudflare.com/cdn-cgi/trace", timeout)
+}
+func FetchURL(addr, target string, timeout time.Duration) (string, error) {
+	return Fetch(context.Background(), addr, target, timeout)
+}
+func PrintIP(port int) {
+	ip, err := ExternalIP(fmt.Sprintf("127.0.0.1:%d", port), 5*time.Second)
 	if err != nil {
-		fmt.Printf("  IP check: %v\n", err)
+		fmt.Printf("IP check: %v\n", err)
 		return
 	}
-	fmt.Printf("  Exit IP: %s\n", ip)
-}
-
-// WaitIP blocks until the external IP is obtained through the proxy or timeout.
-func WaitIP(socksPort int, timeout time.Duration) (string, error) {
-	addr := fmt.Sprintf("127.0.0.1:%d", socksPort)
-	return ExternalIP(addr, timeout)
-}
-
-// WaitURL blocks until urlStr is reachable through the SOCKS proxy.
-func WaitURL(socksPort int, urlStr string, timeout time.Duration) (string, error) {
-	addr := fmt.Sprintf("127.0.0.1:%d", socksPort)
-	return FetchURL(addr, urlStr, timeout)
+	fmt.Printf("Exit IP: %s\n", ip)
 }

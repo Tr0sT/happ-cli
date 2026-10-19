@@ -1,7 +1,6 @@
 package device
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -31,38 +30,20 @@ func TestLoadPersistsIdentity(t *testing.T) {
 	}
 }
 
-func TestLoadRecoversFromCorruption(t *testing.T) {
-	dir := t.TempDir()
-
-	// Write corrupted JSON.
-	if err := os.WriteFile(filepath.Join(dir, "device.json"), []byte("{bad"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	d, err := Load(dir)
-	if err != nil {
-		t.Fatalf("Load after corruption: %v", err)
-	}
-	if d.HWID == "" || d.UUID == "" {
-		t.Fatalf("identity not regenerated after corruption")
-	}
-}
-
-func TestLoadEmptyJSON(t *testing.T) {
-	dir := t.TempDir()
-
-	// Write valid JSON with empty fields.
-	data, _ := json.Marshal(ID{})
-	if err := os.WriteFile(filepath.Join(dir, "device.json"), data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	d, err := Load(dir)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if d.HWID == "" || d.UUID == "" {
-		t.Fatalf("identity not regenerated from empty JSON")
+func TestInvalidIdentityIsNeverOverwritten(t *testing.T) {
+	for _, content := range []string{"{bad", "{}"} {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "device.json")
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(dir); err == nil {
+			t.Fatal("invalid identity accepted")
+		}
+		after, _ := os.ReadFile(path)
+		if string(after) != content {
+			t.Fatal("identity was silently replaced")
+		}
 	}
 }
 

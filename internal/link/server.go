@@ -5,6 +5,7 @@ package link
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -56,15 +57,19 @@ type Server struct {
 	ObfsPassword string
 
 	// Raw is the original share link.
-	Raw string
+	Raw       string
+	RawConfig json.RawMessage
 }
 
 // Parse turns a single share link into a normalized Server.
 func Parse(raw string) (*Server, error) {
 	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "{") {
+		return parseConfig(raw)
+	}
 	scheme, _, ok := strings.Cut(raw, "://")
 	if !ok {
-		return nil, fmt.Errorf("%w: %q", ErrUnsupportedScheme, raw)
+		return nil, ErrUnsupportedScheme
 	}
 
 	switch strings.ToLower(scheme) {

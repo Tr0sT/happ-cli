@@ -28,9 +28,15 @@ func Start(configJSON []byte) (*Instance, error) {
 		return nil, fmt.Errorf("xray: create instance: %w", err)
 	}
 	if err := inst.Start(); err != nil {
+		_ = inst.Close()
 		return nil, fmt.Errorf("xray: start instance: %w", err)
 	}
 	return &Instance{inst: inst}, nil
+}
+
+func Validate(configJSON []byte) error {
+	_, err := serial.LoadJSONConfig(bytes.NewReader(configJSON))
+	return err
 }
 
 // Close stops the instance and releases its resources.

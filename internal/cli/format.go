@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aimuzov/happ-cli/internal/profile"
+	"github.com/Tr0sT/happ-cli/internal/profile"
 )
 
 // formatBytes renders a byte count in human-readable units.

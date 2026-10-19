@@ -1,301 +1,109 @@
-<p align="center">
-  <img src="assets/banner.png" alt="happ-cli" width="800" />
-</p>
-
 # happ-cli
 
-**English** | [Русский](README.ru.md)
+A headless Linux VPN/proxy client based on [GenkaOk/happ-cli](https://github.com/GenkaOk/happ-cli), originally by [aimuzov](https://github.com/aimuzov). It runs an embedded Xray core, without the Happ desktop application or happd.
 
-A terminal VPN client compatible with [HAPP](https://happ.su) subscription
-profiles. It fetches a subscription, parses its share links
-(VLESS / VMess / Trojan / Shadowsocks), and connects through an embedded
-[xray-core](https://github.com/XTLS/Xray-core) — as a local proxy, a system
-proxy, or a full system-wide TUN tunnel.
+[Русская документация](README.ru.md)
 
-Single self-contained binary: xray-core and tun2socks are embedded, no external
-binaries required.
+The main workflow is simple: fetch a subscription, find a profile that can actually reach the required site, save that choice, and reconnect on persistent failures. An AUTO profile is optional.
 
-## Features
-
-| | happ-cli | Other HAPP clients |
-|---|:---:|:---:|
-| Self-contained binary (no dependencies) | ✅ | ❌ |
-| JSON subscription (Incy format) | ✅ | ❌ |
-| System-wide TUN VPN | ✅ | ❌ (proxy only) |
-| TUN-direct (ICMP/ping works) | ✅ | ❌ |
-| Router support (MIPS/ARM, iptables, LAN bypass) | ✅ | ❌ |
-| Auto-failover (round-robin through servers) | ✅ | ❌ |
-| Health checks with dead-server tracking | ✅ | ❌ |
-| YAML config file | ✅ | ❌ |
-| DNS leak prevention (optional) | ✅ | ❌ |
-
-## Supported protocols
-
-| Protocol | Parse | Connect | Transports | Security |
-|----------|:---:|:---:|------------|----------|
-| **VLESS** | ✅ | ✅ | TCP, WS, gRPC, HTTP/2 | Reality, TLS, XTLS Vision |
-| **VMess** | ✅ | ✅ | TCP, WS, gRPC, HTTP/2 | TLS |
-| **Trojan** | ✅ | ✅ | TCP, WS | TLS |
-| **Shadowsocks** | ✅ | ✅ | TCP | AEAD ciphers |
-| **Hysteria2** | ✅ | ❌ | — | — |
-
-## Connection modes
-
-| Mode | Root | ICMP | DNS proxy | Use case |
-|------|:---:|:---:|:---:|----------|
-| `proxy` | ❌ | ❌ | ✅ | Browser/CLI via SOCKS5 |
-| `proxy --system-proxy` | sudo | ❌ | ✅ | macOS system-wide (coexists with VPN) |
-| `tun` | sudo | ❌ | ✅ | Full system VPN via tun2socks |
-| **`tun-direct`** | sudo | ✅ | ✅ | Full VPN with ICMP (xray TUN, no SOCKS) |
-
-## How it works
-
-```
-subscription URL
-      │  profile.Fetch (INCY headers)
-      ▼
-base64 or JSON list ──► link.Parse / json.go ──► []link.Server
-                                            │ xray.BuildConfig
-                                            ▼
-                                    xray-core config (JSON)
-                                            │ xray.Start (embedded core)
-              ┌─────────────────────────────┼─────────────────────────────┐
-              ▼                             ▼                             ▼
-      proxy: SOCKS5/HTTP          --system-proxy: networksetup     tun: tun2socks
-      on 127.0.0.1                sets system SOCKS/HTTP            + route table
-      (no root)                   (sudo)                           (sudo, utun)
-```
-
-## Install
-
-### mise (recommended)
-
-Prebuilt binaries are published to GitHub Releases. Install with
-[mise](https://mise.jdx.dev) — no Go toolchain required. The binary inside the
-archive is `happ` (not `happ-cli`), so pass `exe=happ`:
+## Build
 
 ```sh
-mise use -g "github:aimuzov/happ-cli[exe=happ]@latest"
+nix build github:Tr0sT/happ-cli
+./result/bin/happ --help
 ```
 
-or pin it in `mise.toml`:
-
-```toml
-[tools]
-"github:aimuzov/happ-cli" = { version = "latest", exe = "happ" }
-```
-
-The `ubi` backend works the same way against the same releases, if you prefer it:
-`ubi:aimuzov/happ-cli[exe=happ]`.
-
-> For frequent installs, set `MISE_GITHUB_TOKEN` (or `GITHUB_TOKEN`) to avoid
-> GitHub API rate limits.
-
-### Manual download
-
-Download the archive for your OS/arch from the
-[Releases](https://github.com/aimuzov/happ-cli/releases) page, extract it, and
-put the `happ` binary on your `PATH`.
-
-| System | Architecture | Download |
-|--------|-------------|----------|
-| **Linux** | amd64 | [`happ-linux-amd64.tar.gz`](https://github.com/aimuzov/happ-cli/releases/latest/download/happ-linux-amd64.tar.gz) |
-| | arm64 | [`happ-linux-arm64.tar.gz`](https://github.com/aimuzov/happ-cli/releases/latest/download/happ-linux-arm64.tar.gz) |
-| | armv5 | [`happ-linux-armv5.tar.gz`](https://github.com/aimuzov/happ-cli/releases/latest/download/happ-linux-armv5.tar.gz) |
-| | armv6 | [`happ-linux-armv6.tar.gz`](https://github.com/aimuzov/happ-cli/releases/latest/download/happ-linux-armv6.tar.gz) |
-| | armv7 | [`happ-linux-armv7.tar.gz`](https://github.com/aimuzov/happ-cli/releases/latest/download/happ-linux-armv7.tar.gz) |
-| | mips (softfloat) | [`happ-linux-mips.tar.gz`](https://github.com/aimuzov/happ-cli/releases/latest/download/happ-linux-mips.tar.gz) |
-| | mipsle (softfloat) | [`happ-linux-mipsle.tar.gz`](https://github.com/aimuzov/happ-cli/releases/latest/download/happ-linux-mipsle.tar.gz) |
-| **macOS** | amd64 (Intel) | [`happ-darwin-amd64.tar.gz`](https://github.com/aimuzov/happ-cli/releases/latest/download/happ-darwin-amd64.tar.gz) |
-| | arm64 (Apple Silicon) | [`happ-darwin-arm64.tar.gz`](https://github.com/aimuzov/happ-cli/releases/latest/download/happ-darwin-arm64.tar.gz) |
-| **Windows** | amd64 | [`happ-windows-amd64.zip`](https://github.com/aimuzov/happ-cli/releases/latest/download/happ-windows-amd64.zip) |
-| | 386 | [`happ-windows-386.zip`](https://github.com/aimuzov/happ-cli/releases/latest/download/happ-windows-386.zip) |
-
-### From source
+Or build with Go 1.26.4 or newer:
 
 ```sh
-git clone https://github.com/aimuzov/happ-cli
-cd happ-cli
-go build -o happ ./cmd/happ/   # requires Go 1.26+
+CGO_ENABLED=0 go build -o happ ./cmd/happ
 ```
 
-The resulting `happ` binary is self-contained.
+Build from the checkout: the upstream gVisor compatibility replacement in `go.mod` must be honored. The Nix package includes iproute2, iptables and Xray geoip/geosite assets. Standalone binaries need those tools for Linux TUN and `XRAY_LOCATION_ASSET` pointing to a directory containing `geoip.dat` / `geosite.dat` if a profile references them.
 
-> **`go install github.com/aimuzov/happ-cli@latest` does not work.** The build
-> relies on a `replace` directive in `go.mod` (to reconcile xray-core and
-> tun2socks on gvisor), and `go install pkg@version` ignores `replace`. Use a
-> prebuilt binary or clone and build.
-
-## Usage
-
-### Subscriptions
+## Commands
 
 ```sh
-happ sub add https://panel.example/sub/TOKEN --name myvpn   # add (becomes active)
-happ sub list                                               # list subscriptions
-happ sub update [name]                                      # re-fetch (default: active)
-happ sub use <name>                                         # set the active subscription
-happ sub rm <name>                                          # remove
+# Keep the subscription URL out of shell history and process arguments.
+happ sub add --name primary --url-file /path/to/private-subscription-url
+happ sub list
+happ sub use primary
+happ list
+
+# Probe profiles through temporary local proxies, without changing routes.
+happ select --working --url https://api.github.com
+happ select 'Germany'                 # or explicitly choose a name / number
+happ connect --health-check --failover
+happ check --url https://api.github.com
+
+happ sub update --all                 # noninteractive; keeps cached data on failure
+happ config-show
+happ config-init                     # deliberately overwrites config.yaml with defaults
 ```
 
-`sub list` shows traffic and expiry from the subscription headers:
+`--home DIR` works with all commands; the default is `~/.config/happ-cli`. `--url-file -` reads stdin. `happ://add/https://...` subscription links are accepted. `--ua` overrides the subscription User-Agent.
 
-```
-ACTIVE  NAME    TITLE       SERVERS  TRAFFIC          EXPIRES
-*       myvpn   My VPN      12       12.4 GB / 200 GB  2026-09-01
+`select --working` chooses the **first passing profile**, not the one with the lowest ping. It verifies HTTP 2xx through that profile's SOCKS proxy, with an eight-second request deadline per profile. It does not change routes or restart a running service. If all probes fail, the previous selection is kept. Use an endpoint that matters to your workload.
+
+Selection survives reordered subscriptions and changed credentials. JSON profiles use their unique `remarks` name as identity; share links use protocol/name/address/port. If a selected profile disappears, a normal connection fails explicitly; `--failover` allows other profiles. Failover tries the cached profiles once per process, leaves the preferred choice intact, and reports failure if none work. systemd then retries after 15 seconds.
+
+`sub update` validates generated Xray configs before replacing cached data. Empty responses and losses exceeding half the profile count are errors; `--accept-shrink` explicitly permits the latter. Configuration validation does not prove that a provider is reachable. The update timer and command can run alongside selection without erasing it.
+
+## Linux service and TUN
+
+The flake exports `nixosModules.default`:
+
+```nix
+# flake inputs
+happ-cli.url = "github:Tr0sT/happ-cli";
+happ-cli.inputs.nixpkgs.follows = "nixpkgs";
+
+# NixOS module imports and settings
+imports = [ inputs.happ-cli.nixosModules.default ];
+services.happ-cli.enable = true;
+services.happ-cli.mode = "tun";
+services.happ-cli.checkURL = "https://api.github.com";
+services.happ-cli.failover = true;
+services.happ-cli.autoUpdate = true;
 ```
 
-### Servers
+The service uses `/var/lib/happ-cli` (0700, root-owned). Populate that directory with `happ --home /var/lib/happ-cli sub add ...` and `select --working`, using your normal privilege mechanism. Only one VPN should own the default route: the module conflicts with `happ-vpn.service`. Apply NixOS changes manually. This repository never runs a system rebuild itself.
+
+Service commands delegate to systemd and use its existing permissions:
 
 ```sh
-happ list           # servers in the active subscription
-happ list --sub x   # servers in a specific subscription
+happ service start
+happ service stop
+happ service restart
+happ service status
+happ service logs
+happ --home /var/lib/happ-cli check --tun --url https://api.github.com
 ```
 
-```
-#  PROTOCOL                 ADDRESS              TAG
-1  vless                    de.example:443       🇩🇪 Germany
-2  trojan                   nl.example:443       🇳🇱 Netherlands
-3  hysteria2 (unsupported)  hy.example:443       Fast HY2
-```
+The six-hour update timer restarts an already-running service only after successful refresh. It does not turn a manually stopped service back on. A change to the saved selection takes effect on restart.
 
-### Connecting
+Both `tun` (tun2socks) and `tun-direct` (native Xray TUN) support periodic SOCKS **and interface-bound TUN** probes. Three consecutive failures cause a nonzero exit or failover. SIGINT/SIGTERM cleanly remove installed routes. Proxy mode needs no root; TUN requires root. Local proxies listen on loopback only.
 
-`connect` runs in the foreground until interrupted with `Ctrl+C`. The `selector`
-picks a server: empty = first, a number = 1-based index from `happ list`, or a
-case-insensitive substring of the server tag.
+Routing uses table 20260, priorities 20257–20260, protocol 242 and socket mark `0x48415050`. It consults the existing main table for connected/static routes (including Docker and WARP veth networks), preserves private LAN routes and TCP source-port 22 replies, and excludes marked Xray uplink/bootstrap DNS sockets from the tunnel. Ordinary global IPv6 is rejected rather than silently bypassing the IPv4 tunnel. `cleanup-tun` removes this fork's tagged leftovers and refuses to operate while its TUN process is running. It never flushes upstream's old table 100.
+
+This is **fail-open**: after stopping/crashing, normal networking can resume. It is not a kill switch. LAN DNS and bootstrap resolution can use the ordinary uplink. SSH on a custom port across a public route needs an explicit bypass route before enabling the VPN. Additional VPNs or earlier policy rules can override the intended route and require host-specific inspection.
+
+## Complete Xray profiles
+
+JSON objects, arrays and base64-wrapped JSON are stored intact, retaining outbounds, DNS, transports, routing, balancers and observatories. The CLI supplies its own loopback/TUN listeners, maps corresponding inbound routing tags, removes provider API/metrics listeners and file-log settings, and adds Linux socket marks for TUN. Only import subscriptions you trust. Provider-specific unsupported Xray features produce a validation error; a JSON parser cannot make them compatible.
+
+Share links support VLESS, VMess, Trojan and Shadowsocks. Hysteria2 share links can be listed but are not converted by this client. A raw profile is supported only if the embedded Xray version accepts it. This fork prioritizes Linux/NixOS; macOS proxy builds remain available, while complete JSON TUN and native TUN routing are Linux-only.
+
+`state.json` contains subscription URLs and credentials; `device.json` contains persistent HWID/UUID. Keep both private and backed up. A corrupt identity is an error, never a reason to silently register a new device. Copy a known identity before fetching a device-limited subscription. `happ config` prints credentials and should not be pasted into public issue reports.
+
+## Verification
 
 ```sh
-happ connect                 # first server, proxy mode
-happ connect 2               # server #2
-happ connect germany         # first server whose tag matches "germany"
-
-sudo happ connect 1 --system-proxy   # browsers/apps via system proxy (no routing changes)
-sudo happ connect 1 --mode tun       # full system-wide VPN
-```
-
-In plain proxy mode, point apps at `socks5://127.0.0.1:10808` (Firefox: enable
-"Proxy DNS when using SOCKS v5").
-
-### `connect` flags
-
-| Flag             | Default | Description                                         |
-| ---------------- | ------- | --------------------------------------------------- |
-| `-m, --mode`     | `proxy` | `proxy` or `tun`                                    |
-| `--socks`        | `10808` | local SOCKS5 port                                   |
-| `--http`         | `10809` | local HTTP proxy port (proxy mode)                  |
-| `--system-proxy` | `false` | set the macOS system proxy (proxy mode, needs sudo) |
-| `--no-routing`    | `false` | create TUN device without modifying routes |
-| `--skip-firewall`  | `false` | skip iptables rules (tun/tun-direct) |
-| `--health-check`   | `false` | verify connectivity on start + periodic; exit on failure |
-| `--check-interval`  | `60`    | seconds between health checks |
-| `--check-url`       | Cloudflare trace | URL for health check |
-| `--dns-proxy`       | `true`  | route DNS through proxy to prevent leaks |
-| `--sub`          | active  | subscription name                                   |
-
-### Three ways to route traffic, compared
-
-- **`connect` (proxy)** — only apps explicitly pointed at
-  `socks5://127.0.0.1:10808` (e.g. Firefox with remote DNS). No root.
-- **`connect --system-proxy`** — sets, on every enabled network service, the
-  system SOCKS (`--socks` port) and HTTP/HTTPS (`--http` port) proxies, so
-  Safari/Chrome and apps that ignore SOCKS go through the proxy. Does **not**
-  touch the routing table, so it **coexists with another active VPN**. Needs
-  `sudo`; the previous proxy settings are restored on exit. If a session was
-  killed (`kill -9`) and the proxy stuck, reset it with
-  `sudo happ system-proxy off`.
-- **`connect --mode tun`** — a full system VPN via a utun device; captures all
-  traffic. Needs `sudo`. If another VPN is active at the same time, disconnect it
-  first so the tunnels don't fight over routes/DNS.
-
-### Other commands
-
-```sh
-happ config [selector]       # print the generated xray-core config (debug)
-happ system-proxy off        # emergency reset of the system proxy (sudo)
-```
-
-## Configuration & storage
-
-State (subscriptions and cached links) is stored as `state.json` in the
-per-user config directory (`~/Library/Application Support/happ-cli` on macOS),
-overridable with the global `--home` flag.
-
-## TUN mode details
-
-### macOS
-
-1. the server address is resolved to IP(s), and a host route to each is pinned to
-   its current next hop (a physical gateway, or an already-active VPN interface),
-   so the proxy's own connection to the server does not loop back into the tunnel;
-2. a `utun` device is created and tun2socks forwards its traffic to the local
-   SOCKS proxy served by xray;
-3. the default route is overridden with two `/1` routes scoped to the utun device;
-4. global IPv6 is routed into `lo0` (blocked);
-5. on `Ctrl+C` all routes are removed in reverse order.
-
-### Linux
-
-1. server IPs are pinned to their current next hop (same as macOS);
-2. a TUN device is created via `/dev/net/tun`;
-3. **local subnets are preserved** — `192.168.0.0/16`, `172.16.0.0/12`,
-   `10.0.0.0/8`, link-local, and multicast stay on the physical interface so
-   LAN and router management remain reachable;
-4. the default route is overridden with two `/1` routes scoped to the TUN device;
-5. use `--no-routing` to skip route manipulation (only create the TUN device),
-   useful on routers where routes are managed externally.
-
-## Limitations
-
-- **Hysteria2** servers are parsed and listed but cannot be connected (xray-core has no Hysteria2 outbound).
-- **`--system-proxy` is macOS-only** (uses `networksetup`).
-- **IPv6 is blocked in TUN/TUN-direct mode** (the proxy path is IPv4); IPv6-only destinations become unreachable while connected.
-- `connect` runs in the **foreground**; there is no background daemon yet.
-- A `kill -9` skips cleanup, but stale routes are auto-cleaned on the next `connect`. Use `sudo happ cleanup-tun` for manual recovery.
-
-## Project layout
-
-| Package             | Responsibility                                                    |
-| ------------------- | ----------------------------------------------------------------- |
-| `cmd/happ`          | entry point                                                       |
-| `internal/check`    | connectivity health checks (Cloudflare trace)                     |
-| `internal/cli`      | cobra commands                                                    |
-| `internal/config`   | YAML configuration file                                           |
-| `internal/device`   | per-machine device identity (HWID + UUID)                         |
-| `internal/firewall` | iptables FORWARD rules (Linux)                                    |
-| `internal/link`     | parse share links (vless/vmess/trojan/ss/hysteria2)               |
-| `internal/profile`  | fetch a subscription, decode base64/JSON body + headers           |
-| `internal/store`    | persist subscriptions, cached links, last-used tracking           |
-| `internal/tunnel`   | TUN mode: tun2socks + route management (macOS + Linux)            |
-| `internal/sysproxy` | macOS system proxy via networksetup                               |
-| `internal/xray`     | build xray-core config from a server, run the embedded core       |
-
-## Development
-
-```sh
-go test ./...        # unit tests + a real end-to-end proxy test
+go test ./...
 go vet ./...
+bash tests/netns.sh
 ```
 
-The xray integration test starts a real Shadowsocks server and a client built
-from a `link.Server`, then verifies an HTTP request routed through the client's
-SOCKS inbound reaches a target through the proxy.
+The network test creates isolated user, mount and network namespaces. It checks both TUN implementations with a real encrypted proxy, Docker/WARP-style routes, forwarded traffic, IPv6 rejection and teardown. It does not change host networking. Unprivileged user namespaces, iproute2, iptables and `/dev/net/tun` must be available. A passing isolated test does not replace testing the actual provider and VDS routing.
 
-> xray-core and tun2socks require different `gvisor.dev/gvisor` versions; a
-> `replace` directive in `go.mod` pins gvisor to the version both build against.
-> Don't drop it — see the comment there.
-
-### Releasing
-
-Releases are built by [GoReleaser](https://goreleaser.com) in CI on a tag push:
-
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-The `build-release` workflow (`.github/workflows/build-release.yml`) builds
-binaries for 12 OS/arch combinations (linux/darwin/windows, amd64/arm64/armv5-7/mips/mipsle)
-and uploads them to GitHub Releases. Building there
-honors the `go.mod` `replace` directive (happ-cli is the main module). Dry-run
-locally with `goreleaser release --clean --snapshot`.
+Useful reference: [d4nom/happ-vpn-setup](https://github.com/d4nom/happ-vpn-setup) documents stable HWID, repeated-failure health checks and validation before refresh. This fork retains Xray profiles rather than translating them to sing-box.

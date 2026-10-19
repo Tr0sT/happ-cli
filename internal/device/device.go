@@ -40,7 +40,10 @@ func Load(dir string) (*ID, error) {
 		if err := json.Unmarshal(data, &d); err == nil && d.HWID != "" && d.UUID != "" {
 			return &d, nil
 		}
-		// Corrupted — regenerate.
+		return nil, fmt.Errorf("device: invalid device.json; restore the saved identity instead of registering a new device")
+	}
+	if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("device: read: %w", err)
 	}
 
 	d := &ID{
