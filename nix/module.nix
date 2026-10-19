@@ -15,7 +15,7 @@ in {
     };
     checkURL = lib.mkOption {
       type = lib.types.str;
-      default = "https://api.github.com";
+      default = "https://www.gstatic.com/generate_204";
       description = "HTTP(S) endpoint that must succeed through the proxy and TUN.";
     };
     failover = lib.mkOption {

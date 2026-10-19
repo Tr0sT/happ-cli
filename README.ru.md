@@ -43,7 +43,7 @@ happ-cli.inputs.nixpkgs.follows = "nixpkgs";
 imports = [ inputs.happ-cli.nixosModules.default ];
 services.happ-cli.enable = true;
 services.happ-cli.mode = "tun";
-services.happ-cli.checkURL = "https://api.github.com";
+services.happ-cli.checkURL = "https://www.gstatic.com/generate_204";
 services.happ-cli.failover = true;
 services.happ-cli.autoUpdate = true;
 ```
